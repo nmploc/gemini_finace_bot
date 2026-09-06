@@ -1,0 +1,9 @@
+{
+  "name": "gemini-finance-bot",
+  "version": "1.0.0",
+  "description": "Google Apps Script bot - Bot Chi Tieu Gemini",
+  "scripts": {
+    "push": "clasp push",
+    "pull": "clasp pull"
+  }
+}
