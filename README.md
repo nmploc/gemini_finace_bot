@@ -8,7 +8,7 @@ Bot Telegram quản lý chi tiêu cá nhân, chạy hoàn toàn trên **Google A
 
 ## 1. Mục tiêu & triết lý thiết kế
 
-- **Cá nhân, đơn giản, miễn phí**: chỉ cần 1 file Apps Script + 1 Google Sheet + 1 Telegram Bot + 1 Gemini API key (free tier).
+- **Cá nhân, đơn giản, miễn phí**: mã nguồn dạng module (11 files Apps Script) + 1 Google Sheet + 1 Telegram Bot + 1 Gemini API key (free tier).
 - **Tiết kiệm token AI tối đa**: phần lớn tính năng (báo cáo, dự đoán, phát hiện bất thường, điểm sức khỏe tài chính...) là **công thức tính toán thuần**, không gọi AI. Gemini chỉ được dùng ở đúng 2 chỗ:
   1. Parse giao dịch từ câu nhập tự nhiên (bắt buộc, mỗi giao dịch 1 lần gọi).
   2. Lệnh `/hoi` — hỏi đáp tự do (có cache + giới hạn 30 lượt/ngày).
@@ -43,7 +43,33 @@ GEMINI_MODEL_CHAIN = [ 'gemini-3.5-flash' (ghim cứng), 'gemini-2.5-flash' (d�
 
 ---
 
-## 3. Luồng xử lý chính (Workflow)
+## 3. Cấu trúc dự án & Phân chia module (11 files)
+
+Toàn bộ code ban đầu từ file đơn khối `FinanceBot_VI.js` (2,566 dòng) đã được phân tách thành **11 module `.js` chuyên biệt** trên Google Apps Script, được tổ chức theo đúng nguyên tắc đơn nhiệm.
+
+> ⚠️ **Lưu ý về Runtime Google Apps Script**:
+> - Tất cả các file trong project dùng chung **một global scope phẳng** (không dùng `import`/`export`/`require`).
+> - Apps Script nạp file theo thứ tự bảng chữ cái (alphabetical order). Tiền tố số `00_` đảm bảo `00_Config.js` luôn được thực thi đầu tiên để khởi tạo các hằng số, cấu hình và bảng tham chiếu dùng chung cho toàn bộ hệ thống.
+
+### Bảng phân nhiệm & Function Mapping (113 thành phần đã đối soát 100%)
+
+| File | Trách nhiệm chính | Danh sách hàm & hằng số (113 thành phần) |
+|---|---|---|
+| `00_Config.js` *(25)* | Cấu hình, đọc Script Properties, model fallback chain, danh mục chi tiêu, định nghĩa bàn phím, thuật toán Levenshtein gợi ý lệnh & đăng ký menu lệnh bot | `props`, `BOT_TOKEN`, `GEMINI_KEY`, `SHEET_ID`, `ADMIN_CHAT_ID`, `TG_API`, `REMIND_HOUR`, `REPORT_HOUR`, `GEMINI_MODEL`, `GEMINI_MODEL_CHAIN`, `buildGeminiUrl`, `GEMINI_URL`, `VALID_CATEGORIES`, `PENDING_TTL_SECONDS`, `MAIN_KEYBOARD`, `BUTTON_COMMAND_MAP`, `normalizeButtonLabel`, `BUTTON_COMMAND_MAP_NORMALIZED`, `isCommand`, `ALL_COMMANDS`, `VALID_COMMAND_WORDS`, `levenshteinDistance`, `findClosestCommand`, `utf8ByteLength`, `registerBotCommands` |
+| `01_Router.js` *(5)* | Điều phối webhook chính (`doPost`), xử lý callback inline button, gửi giao diện xem trước & chọn nhanh danh mục, endpoint kiểm tra sức khỏe bot (`doGet`) | `doPost`, `handleCallbackQuery`, `sendTransactionPreview`, `sendCategoryPicker`, `doGet` |
+| `Gemini.js` *(17)* | Trích xuất thời gian, giao tiếp Gemini API với retry & fallback chain, prompt cấu trúc JSON parse giao dịch; xử lý lệnh `/hoi` (freeform Q&A), quản lý quota 30 câu/ngày và cơ chế hoàn quota khi gặp lỗi mạng | `parseDateTimeFromText`, `formatDateTimeVN`, `fetchGeminiWithRetry`, `MODEL_FALLBACK_CODES`, `buildGeminiPayloadOptions`, `fetchGeminiWithModelFallback`, `parseAndReactWithGemini`, `MAX_QUESTION_LENGTH`, `HOI_CACHE_TTL_SECONDS`, `buildAIContextSummary`, `askGeminiFreeform`, `HOI_DAILY_LIMIT`, `HOI_QUOTA_KEY_PREFIX`, `checkHoiQuota`, `cleanupOldHoiQuotaKeys`, `handleHoiCommand`, `refundHoiQuota` |
+| `Sheets_Transactions.js` *(9)* | Tương tác bảng `Transactions`: cache dữ liệu 60s, ghi nhận thu/chi mới (kèm `LockService`), tra cứu giao dịch gần nhất, xoá dòng theo ID hàng, tìm kiếm theo từ khoá/khoảng tiền | `getAllTransactionsCached`, `invalidateTransactionsCache`, `getMonthlyTransactionData`, `ensureSheet`, `appendToSheet`, `getRecentTransactions`, `getTransactionByRow`, `deleteTransactionRow`, `searchTransactions` |
+| `Sheets_Budget.js` *(9)* | Tương tác bảng `Budgets`: thiết lập hạn mức tháng, bộ phân tích số tiền viết tắt (`parseAmountShorthand` hỗ trợ `1.5tr`, `500k`...), tính % đã tiêu và cảnh báo 4 mốc (50%, 80%, 100%) | `ensureBudgetSheet`, `getBudgets`, `setBudget`, `parseAmountShorthand`, `handleBudgetCommand`, `getCategorySpendThisMonth`, `getBudgetRemaining`, `checkBudgetAlert`, `getBudgetStatusText` |
+| `Sheets_Goals.js` *(4)* | Tương tác bảng `Goals`: tạo mục tiêu tiết kiệm, ghi nhận số tiền tích lũy và xuất báo cáo tiến độ thực hiện | `ensureGoalsSheet`, `handleGoalCommand`, `handleSaveContributionCommand`, `getGoalsReport` |
+| `Sheets_Debts.js` *(5)* | Tương tác bảng `Debts`: quản lý khoản vay & cho vay, parse hạn thanh toán, hiển thị danh sách nợ tồn đọng kèm nút xác nhận đã trả | `ensureDebtsSheet`, `parseSimpleDate`, `handleDebtCommand`, `sendDebtsList`, `markDebtPaid` |
+| `Sheets_Bills.js` *(4)* | Tương tác bảng `Bills`: quản lý các hoá đơn định kỳ hàng tháng, báo cáo danh sách hoá đơn và tổng hợp các khoản nợ/hoá đơn sắp đến hạn trong 3 ngày tới | `ensureBillsSheet`, `handleBillCommand`, `getBillsReport`, `getDueSoonReport` |
+| `Reports.js` *(26)* | Báo cáo tài chính thuần công thức (0 token AI): tổng kết ngày/tuần/tháng, số dư lũy kế, top danh mục, phân tích so sánh tháng trước; thuật toán dự báo cuối tháng, phát hiện chi định kỳ, chấm điểm sức khỏe tài chính /100, thói quen chi tiêu & cảnh báo bất thường | `getDayReport`, `getTotalBalance`, `getBalanceReport`, `getFinanceReport`, `getCategoryReport`, `getTopCategoryReport`, `getCategoryTotalsThisMonth`, `getCompareReport`, `getCategoryCompareLines`, `getAutoCauseLine`, `getWeekBounds`, `getWeekReport`, `getTop5Report`, `getForecastNumbers`, `getForecastReport`, `getTrendReport`, `getSubscriptionsReport`, `ESSENTIAL_CATEGORIES`, `computeHealthScoreRaw`, `getFinancialHealthScore`, `getEmergencyFundSuggestion`, `checkAnomalyAlert`, `buildWeekdayBuckets`, `getWeekdayPatternReport`, `getBehaviorSavingTips`, `getBadHabitReport` |
+| `Telegram.js` *(2)* | Gửi thông điệp Telegram qua Bot API (hỗ trợ định dạng HTML/Markdown, inline keyboard) và render biểu đồ tròn danh mục qua QuickChart | `sendCategoryChart`, `sendMessage` |
+| `Triggers.js` *(7)* | Hệ thống tự động theo thời gian: kiểm tra giao dịch trong ngày, nhắc nhở lúc 20:00 (kèm pattern chi tiêu và hạn nợ/bill), gửi báo cáo 21:00, cài đặt và kiểm tra trạng thái Project Triggers | `hasTransactionToday`, `getPatternHintForDay`, `dailyReminderJob`, `dailyReportJob`, `setupTriggers`, `testReminderNow`, `checkTriggersStatus` |
+
+---
+
+## 4. Luồng xử lý chính (Workflow)
 
 ### 3.1. Luồng ghi giao dịch tự nhiên (luồng quan trọng nhất)
 
@@ -115,7 +141,7 @@ askGeminiFreeform() — gửi context + câu hỏi, dùng chung cơ chế model 
 
 ---
 
-## 4. Danh sách tính năng đầy đủ (theo nhóm phát triển A–D)
+## 5. Danh sách tính năng đầy đủ (theo nhóm phát triển A–D)
 
 ### Nhóm A — Báo cáo 0 token (thuần công thức)
 | Lệnh | Chức năng |
@@ -170,7 +196,7 @@ askGeminiFreeform() — gửi context + câu hỏi, dùng chung cơ chế model 
 
 ---
 
-## 5. Cấu trúc dữ liệu (Google Sheets)
+## 6. Cấu trúc dữ liệu (Google Sheets)
 
 | Sheet | Cột |
 |---|---|
@@ -184,7 +210,7 @@ askGeminiFreeform() — gửi context + câu hỏi, dùng chung cơ chế model 
 
 ---
 
-## 6. Các lớp phòng thủ kỹ thuật đáng chú ý
+## 7. Các lớp phòng thủ kỹ thuật đáng chú ý
 
 - **Lock khi ghi/xoá Sheet** (`LockService`) — tránh 2 request ghi đè nhau.
 - **Cache 60s cho đọc, KHÔNG cache cho ghi/xoá theo dòng** — báo cáo dùng cache để nhanh, nhưng `/undo`, `/delete` luôn đọc trực tiếp Sheet để không xoá nhầm dòng nếu dữ liệu vừa đổi.
@@ -196,7 +222,7 @@ askGeminiFreeform() — gửi context + câu hỏi, dùng chung cơ chế model 
 
 ---
 
-## 7. Sự cố đã gặp & bài học
+## 8. Sự cố đã gặp & bài học
 
 | Sự cố | Nguyên nhân | Cách khắc phục |
 |---|---|---|
@@ -207,7 +233,7 @@ askGeminiFreeform() — gửi context + câu hỏi, dùng chung cơ chế model 
 
 ---
 
-## 8. Cài đặt nhanh (tóm tắt)
+## 9. Cài đặt nhanh (tóm tắt)
 
 1. Tạo Telegram Bot qua BotFather → lấy `BOT_TOKEN`.
 2. Lấy `ADMIN_CHAT_ID` bằng lệnh `/whoami` sau khi deploy lần đầu.
@@ -220,7 +246,7 @@ askGeminiFreeform() — gửi context + câu hỏi, dùng chung cơ chế model 
 
 ---
 
-## 9. Giới hạn hiện tại / hướng phát triển tiếp
+## 10. Giới hạn hiện tại / hướng phát triển tiếp
 
 - Chỉ hỗ trợ 1 người dùng chính (không phân quyền nhiều user độc lập trong cùng 1 Sheet).
 - 7 danh mục cố định, chưa cho phép người dùng tự thêm danh mục mới.
