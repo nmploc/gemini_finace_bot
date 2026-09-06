@@ -94,8 +94,17 @@ function getFinanceReport(mode = "all") {
   const balance = totalThu - totalChi;
   const emoji = balance >= 0 ? "🟢" : "🔴";
   const title = mode === "day" ? "📅 <b>Báo cáo hôm nay</b>" : mode === "month" ? "🗓️ <b>Báo cáo tháng này</b>" : "📊 <b>Báo cáo tổng hợp</b>";
+  let catSection = "";
+  if (mode === "month") {
+    const catTotals = getCategoryTotalsThisMonth(0);
+    const catEntries = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
+    if (catEntries.length > 0) {
+      catSection = "\n\n<b>Chi tiêu theo danh mục:</b>\n" +
+        catEntries.map(([cat, val]) => `• ${cat}: ${val.toLocaleString()}đ`).join("\n");
+    }
+  }
   const causeLine = mode === "month" ? getAutoCauseLine() : "";
-  return `${title}\n\n💰 <b>Tổng thu:</b> ${totalThu.toLocaleString()}đ\n💸 <b>Tổng chi:</b> ${totalChi.toLocaleString()}đ\n${emoji} <b>Cân đối:</b> ${balance.toLocaleString()}đ\n\n${balance >= 0 ? "Tài chính ổn áp đó nha 😎" : "Chi hơi mạnh tay rồi 😅"}${causeLine}`;
+  return `${title}\n\n💰 <b>Tổng thu:</b> ${totalThu.toLocaleString()}đ\n💸 <b>Tổng chi:</b> ${totalChi.toLocaleString()}đ\n${emoji} <b>Cân đối:</b> ${balance.toLocaleString()}đ\n\n${balance >= 0 ? "Tài chính ổn áp đó nha 😎" : "Chi hơi mạnh tay rồi 😅"}${catSection}${causeLine}`;
 }
 
 function getCategoryReport() {
@@ -248,8 +257,8 @@ function getWeekReport() {
 
   const catEntries = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
   if (catEntries.length > 0) {
-    result += `\n<b>Danh mục chi nhiều nhất tuần:</b>\n`;
-    catEntries.slice(0, 3).forEach(([cat, val]) => result += `• ${cat}: ${val.toLocaleString()}đ\n`);
+    result += `\n<b>Chi tiêu theo danh mục:</b>\n`;
+    catEntries.forEach(([cat, val]) => result += `• ${cat}: ${val.toLocaleString()}đ\n`);
   }
   return result;
 }
