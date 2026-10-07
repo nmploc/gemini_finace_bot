@@ -22,7 +22,7 @@ const REPORT_HOUR = 21;
 // Input/Output Tokens per model chuyển từ 3.5/3.6 Flash sang 3.7 Flash).
 // Nếu muốn đổi bản, sửa TRỰC TIẾP ở đây (không dùng "-latest") để kiểm soát được thời điểm nâng cấp,
 // tránh bị Google tự đẩy sang bản mới chưa ổn định.
-const GEMINI_MODEL = 'gemini-3.5-flash';
+const GEMINI_MODEL = 'gemini-3.5-flash-lite';
 
 // =====================================================
 // GEMINI MODEL FALLBACK CHAIN (MỚI)
@@ -34,11 +34,11 @@ const GEMINI_MODEL = 'gemini-3.5-flash';
 // tự động lùi xuống thử model kế tiếp trong chain — không cần can thiệp thủ công.
 //
 // GEMINI_MODEL_FALLBACK có thể override qua Script Properties (không bắt buộc); nếu không đặt,
-// mặc định dùng 'gemini-2.5-flash' — bản cũ hơn GEMINI_MODEL, xem như lựa chọn an toàn dự phòng.
+// mặc định dùng 'gemini-3.5-flash' — bản đầy đủ làm lựa chọn an toàn dự phòng.
 // Có thể thêm nhiều bậc dự phòng hơn nữa bằng cách nối thêm phần tử vào mảng này.
 const GEMINI_MODEL_CHAIN = [
   GEMINI_MODEL,
-  props.getProperty('GEMINI_MODEL_FALLBACK') || 'gemini-2.5-flash',
+  props.getProperty('GEMINI_MODEL_FALLBACK') || 'gemini-3.5-flash',
 ];
 
 function buildGeminiUrl(model) {
