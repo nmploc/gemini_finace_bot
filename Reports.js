@@ -635,3 +635,95 @@ function getBadHabitReport() {
   return "📊 <b>Thói quen đáng chú ý (30 ngày qua)</b>\n\n" + lines.join("\n") +
     "\n\n<i>* Chỉ là số liệu khách quan để bạn tự đánh giá, không phải nhận xét.</i>";
 }
+
+// =====================================================
+// LOW-BALANCE WARNING SYSTEM (3 TIERS)
+// =====================================================
+// Phân cấp số dư hiện tại thành tier:
+// 0: An toàn (>= 1.000.000đ)
+// 1: Cảnh báo Cấp 1 (300.000đ <= balance < 1.000.000đ)
+// 2: Cảnh báo Cấp 2 (0đ < balance < 300.000đ)
+// 3: Cảnh báo Khẩn cấp (balance <= 0đ)
+function getLowBalanceTier(balance) {
+  if (balance <= LOW_BALANCE_CRITICAL_THRESHOLD) return 3;
+  if (balance < LOW_BALANCE_LEVEL2_THRESHOLD) return 2;
+  if (balance < LOW_BALANCE_LEVEL1_THRESHOLD) return 1;
+  return 0;
+}
+
+// Định dạng thông điệp cảnh báo tiếng Việt theo cấp độ
+function formatLowBalanceAlert(tier, balance) {
+  const formattedBalance = `${Number(balance || 0).toLocaleString()}đ`;
+  if (tier === 3) {
+    return `🛑 <b>BÁO ĐỘNG ĐỎ: SỐ DƯ ĐÃ HẾT HOẶC ÂM!</b>\n\n` +
+      `💵 Số dư hiện tại của bạn: <b>${formattedBalance}</b>\n` +
+      `🆘 Bạn đang chi vượt quá số tiền hiện có. Hãy dừng ngay các khoản chi không bắt buộc và kiểm tra lại dòng tiền của mình!`;
+  }
+  if (tier === 2) {
+    return `🚨 <b>CẢNH BÁO: SỐ DƯ DƯỚI 300.000đ!</b>\n\n` +
+      `💵 Số dư hiện tại của bạn: <b>${formattedBalance}</b>\n` +
+      `📉 Ví của bạn đang ở mức rất thấp. Vui lòng cân nhắc hạn chế tối đa các khoản chi tiêu không thực sự thiết yếu!`;
+  }
+  if (tier === 1) {
+    return `⚠️ <b>CẢNH BÁO: SỐ DƯ DƯỚI 1.000.000đ</b>\n\n` +
+      `💵 Số dư hiện tại của bạn: <b>${formattedBalance}</b>\n` +
+      `💡 Bạn đang tiến gần ngưỡng chi tiêu an toàn. Hãy chú ý cân đối các khoản chi trong những ngày tới nhé!`;
+  }
+  return "";
+}
+
+// Đánh giá chuyển trạng thái cảnh báo (Pure function, dễ test độc lập)
+// - Cắt ngưỡng đi xuống (currentTier > lastAlertTier): alert cho currentTier (cấp nghiêm trọng nhất), cập nhật nextTier
+// - Cùng cấp (currentTier === lastAlertTier): không alert, nextTier giữ nguyên
+// - Số dư tăng ngược (currentTier < lastAlertTier): reset nextTier về currentTier để các lần rơi sau lại cảnh báo
+function evaluateLowBalanceTransition(currentBalance, lastAlertTier = 0) {
+  const currentTier = getLowBalanceTier(currentBalance);
+  const prevTier = Number(lastAlertTier) || 0;
+
+  if (currentTier > prevTier) {
+    // Xuống cấp nghiêm trọng hơn -> bắn alert duy nhất cho cấp mới
+    return {
+      nextTier: currentTier,
+      shouldAlert: true,
+      alertTier: currentTier,
+      message: formatLowBalanceAlert(currentTier, currentBalance)
+    };
+  }
+
+  // Số dư phục hồi hoặc giữ nguyên bậc -> không alert
+  return {
+    nextTier: currentTier,
+    shouldAlert: false,
+    alertTier: 0,
+    message: ""
+  };
+}
+
+// Kiểm tra số dư hiện tại và cập nhật Script Properties
+// Trả về alert message nếu có cảnh báo cần gửi, hoặc null nếu không
+function checkLowBalanceAlert() {
+  const { balance } = getTotalBalance();
+  const rawTier = props.getProperty(LOW_BALANCE_TIER_PROPERTY_KEY);
+  const lastTier = (rawTier !== null && rawTier !== undefined && rawTier !== "") ? parseInt(rawTier, 10) : 0;
+
+  const result = evaluateLowBalanceTransition(balance, lastTier);
+
+  // Lưu trạng thái mới nếu bậc thay đổi (kể cả khi hạ bậc / phục hồi số dư)
+  if (result.nextTier !== lastTier) {
+    props.setProperty(LOW_BALANCE_TIER_PROPERTY_KEY, String(result.nextTier));
+  }
+
+  return result.shouldAlert ? result.message : null;
+}
+
+// Wrapper gửi cảnh báo an toàn: không ném exception làm hỏng luồng lưu giao dịch
+function checkAndSendLowBalanceAlert(chatId) {
+  try {
+    const alertMsg = checkLowBalanceAlert();
+    if (alertMsg) {
+      sendMessage(chatId, alertMsg, "HTML");
+    }
+  } catch (err) {
+    Logger.log("checkAndSendLowBalanceAlert error (bỏ qua): " + err);
+  }
+}

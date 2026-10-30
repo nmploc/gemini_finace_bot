@@ -51,6 +51,14 @@ const GEMINI_URL = buildGeminiUrl(GEMINI_MODEL);
 const VALID_CATEGORIES = ["Ăn uống", "Di chuyển", "Giải trí", "Hóa đơn", "Mua sắm", "Sức khỏe", "Khác"];
 const PENDING_TTL_SECONDS = 300; // 5 phút chờ xác nhận trước khi tự huỷ
 
+// =====================================================
+// NGƯỠNG CẢNH BÁO SỐ DƯ THẤP (VND)
+// =====================================================
+const LOW_BALANCE_LEVEL1_THRESHOLD   = 1000000; // Cấp 1: < 1.000.000đ
+const LOW_BALANCE_LEVEL2_THRESHOLD   = 300000;  // Cấp 2: < 300.000đ
+const LOW_BALANCE_CRITICAL_THRESHOLD = 0;       // Khẩn cấp: <= 0đ
+const LOW_BALANCE_TIER_PROPERTY_KEY  = "LOW_BALANCE_LAST_ALERT_TIER";
+
 // Reply Keyboard cố định — chỉ là UI Telegram, KHÔNG gọi Gemini.
 const MAIN_KEYBOARD = [
   ["💵 Số dư", "📊 Hôm nay", "📆 Tuần này", "🗓️ Tháng này"],

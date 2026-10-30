@@ -437,6 +437,13 @@ function handleCallbackQuery(cq) {
     }
     sendMessage(chatId, msgText, "HTML");
 
+    // Đánh giá và gửi cảnh báo số dư thấp nếu vượt ngưỡng (không chặn/làm chậm lưu giao dịch)
+    try {
+      checkAndSendLowBalanceAlert(chatId);
+    } catch (alertErr) {
+      Logger.log("Lỗi gửi cảnh báo số dư thấp (bỏ qua): " + alertErr);
+    }
+
   } else if (data === "confirm_cancel") {
     CacheService.getScriptCache().remove("pending_" + chatId);
     sendMessage(chatId, "❌ Đã huỷ. Bạn có thể gõ lại giao dịch với nội dung khác.");
