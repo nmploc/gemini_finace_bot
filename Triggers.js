@@ -53,10 +53,39 @@ function dailyReportJob() {
 }
 
 function setupTriggers() {
-  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('dailyReminderJob').timeBased().everyDays(1).atHour(REMIND_HOUR).create();
-  ScriptApp.newTrigger('dailyReportJob').timeBased().everyDays(1).atHour(REPORT_HOUR).create();
-  Logger.log("Đã tạo trigger. Múi giờ project hiện tại: " + Session.getScriptTimeZone());
+  const targetHandlers = ['dailyReminderJob', 'dailyReportJob'];
+  const existingTriggers = ScriptApp.getProjectTriggers();
+
+  // 1. Chỉ xoá các trigger thuộc 2 handler này để tránh nhân bản hoặc tích tụ trigger cũ
+  existingTriggers.forEach(t => {
+    if (targetHandlers.includes(t.getHandlerFunction())) {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+
+  const tz = Session.getScriptTimeZone();
+
+  // 2. Tạo trigger cho dailyReminderJob với nearMinute(0) và chỉ định múi giờ tường minh
+  ScriptApp.newTrigger('dailyReminderJob')
+    .timeBased()
+    .everyDays(1)
+    .atHour(REMIND_HOUR)
+    .nearMinute(0)
+    .inTimezone(tz)
+    .create();
+
+  // 3. Tạo trigger cho dailyReportJob với nearMinute(0) và chỉ định múi giờ tường minh
+  ScriptApp.newTrigger('dailyReportJob')
+    .timeBased()
+    .everyDays(1)
+    .atHour(REPORT_HOUR)
+    .nearMinute(0)
+    .inTimezone(tz)
+    .create();
+
+  Logger.log(`Đã tạo lại trigger thành công [Múi giờ: ${tz}]:`);
+  Logger.log(`- dailyReminderJob: cấu hình ${REMIND_HOUR}:00 (cửa sổ chạy: ${REMIND_HOUR - 1}:45 – ${REMIND_HOUR}:15)`);
+  Logger.log(`- dailyReportJob: cấu hình ${REPORT_HOUR}:00 (cửa sổ chạy: ${REPORT_HOUR - 1}:45 – ${REPORT_HOUR}:15)`);
 }
 
 // Chạy tay hàm này trong Apps Script editor để kiểm tra nhắc nhở hoạt động ngay,
