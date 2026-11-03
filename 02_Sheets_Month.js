@@ -24,6 +24,25 @@ function getEffectiveSpreadsheetTimeZone(ss) {
 }
 
 /**
+ * Xác định dấu phân cách đối số hàm trong công thức dựa trên locale của Spreadsheet.
+ * Với locale Việt Nam (vi_VN) và các nước dùng dấu phẩy làm dấu thập phân, Google Sheets
+ * quy định dấu phân cách đối số là dấu chấm phẩy (;). Với tiếng Anh (en) là dấu phẩy (,).
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @returns {string} ';' hoặc ','
+ */
+function getFormulaArgumentSeparator(ss) {
+  try {
+    const locale = (ss.getSpreadsheetLocale() || "").toLowerCase();
+    if (locale.startsWith("en")) {
+      return ",";
+    }
+  } catch (err) {
+    Logger.log("[getFormulaArgumentSeparator] Lỗi đọc locale: " + err);
+  }
+  return ";";
+}
+
+/**
  * Kiểm tra xem một tên tab có phải là tab tháng YYYY-MM hay không.
  * Dùng để loại bỏ các tab tháng khi duyệt danh sách sheet.
  * @param {string} sheetName
@@ -41,35 +60,41 @@ function reportSpreadsheetTimeZone() {
   const ss = SpreadsheetApp.openById(SHEET_ID);
   const spreadsheetTimeZone = ss.getSpreadsheetTimeZone();
   const scriptTimeZone = Session.getScriptTimeZone();
-  Logger.log(`[reportSpreadsheetTimeZone] Spreadsheet: ${spreadsheetTimeZone} | Script: ${scriptTimeZone}`);
-  return { spreadsheetTimeZone, scriptTimeZone };
+  const locale = ss.getSpreadsheetLocale();
+  Logger.log(`[reportSpreadsheetTimeZone] Spreadsheet: ${spreadsheetTimeZone} | Script: ${scriptTimeZone} | Locale: ${locale}`);
+  return { spreadsheetTimeZone, scriptTimeZone, locale };
 }
 
 /**
  * Xây dựng công thức QUERY với literal date đã format sẵn trong JavaScript.
  *
- * LƯU Ý VỀ LITERAL DATE & DATETIME TRONG QUERY GOOGLE SHEETS:
- * 1. Dạng chính: date 'yyyy-MM-dd'
+ * LƯU Ý VỀ DẤU PHÂN CÁCH ĐỐI SỐ & LITERAL DATE TRONG GOOGLE SHEETS:
+ * 1. Dấu phân cách đối số:
+ *    - Với locale vi_VN (Việt Nam), dấu phân cách đối số bắt buộc là ';'
+ *    - Với locale en_US (Hoa Kỳ), dấu phân cách là ','
+ * 2. Dạng literal date chính: date 'yyyy-MM-dd'
  *    Google Sheets Query engine coi literal date tương đương 00:00:00 ngày hôm đó.
  *    Do cột A chứa datetime (thời gian kèm giờ:phút:giây), biểu thức:
  *      A >= date 'YYYY-MM-01' AND A < date '<NEXT_MONTH_01>'
  *    khớp chính xác mọi giao dịch từ 00:00:00 ngày đầu tháng đến 23:59:59 ngày cuối tháng.
- * 2. Fallback datetime: Nếu môi trường yêu cầu tường minh kiểu datetime do cột A có giờ:
+ * 3. Fallback datetime: Nếu môi trường yêu cầu tường minh kiểu datetime do cột A có giờ:
  *      SELECT * WHERE A >= datetime '${startStr} 00:00:00' AND A < datetime '${nextMonthStr} 00:00:00'
- * 3. Fallback FILTER (nếu QUERY gặp lỗi cú pháp vùng dữ liệu):
- *      =IFERROR(FILTER('${MASTER_SHEET_NAME}'!A2:F, '${MASTER_SHEET_NAME}'!A2:A >= DATE(yyyy, mm, 1), '${MASTER_SHEET_NAME}'!A2:A < DATE(next_yyyy, next_mm, 1)), "")
+ * 4. Fallback FILTER (nếu QUERY gặp lỗi cú pháp vùng dữ liệu):
+ *      =IFERROR(FILTER('${MASTER_SHEET_NAME}'!A2:F; '${MASTER_SHEET_NAME}'!A2:A >= DATE(yyyy; mm; 1); '${MASTER_SHEET_NAME}'!A2:A < DATE(next_yyyy; next_mm; 1)); "")
  *
  * @param {string} startStr 'yyyy-MM-01'
  * @param {string} nextMonthStr 'yyyy-MM-01' của tháng kế tiếp
- * @returns {string} Chuỗi công thức hoàn chỉnh để setFormula()
+ * @param {string} [sep=';'] Dấu phân cách đối số (';' cho vi_VN, ',' cho en)
+ * @returns {string} Chuỗi công thức hoàn chỉnh để setFormulaLocal() / setFormula()
  */
-function buildMonthQueryFormula(startStr, nextMonthStr) {
-  return `=QUERY('${MASTER_SHEET_NAME}'!A2:F, "SELECT * WHERE A >= date '${startStr}' AND A < date '${nextMonthStr}'", 0)`;
+function buildMonthQueryFormula(startStr, nextMonthStr, sep = ";") {
+  return `=QUERY('${MASTER_SHEET_NAME}'!A2:F${sep} "SELECT * WHERE A >= date '${startStr}' AND A < date '${nextMonthStr}'"${sep} 0)`;
 }
 
 /**
  * Đảm bảo tab tháng (YYYY-MM) tương ứng với ngày truyền vào đã tồn tại.
  * Hàm idempotent: nếu tab đã có thì không tạo lại và trả về tab hiện có.
+ * Đồng thời tự động phát hiện và sửa công thức nếu tab cũ đang có lỗi do dùng dấu phẩy ','.
  *
  * @param {Date|string|number} [date] Ngày của giao dịch (mặc định là thời điểm hiện tại)
  * @returns {GoogleAppsScript.Spreadsheet.Sheet}
@@ -83,9 +108,32 @@ function ensureMonthSheet(date) {
   const tz = getEffectiveSpreadsheetTimeZone(ss);
   const tabName = Utilities.formatDate(validDate, tz, MONTH_SHEET_FORMAT);
 
-  // 1. Kiểm tra nếu tab đã tồn tại (idempotent)
+  // Tính ngày đầu tháng và ngày đầu tháng tiếp theo theo múi giờ Spreadsheet
+  const yearStr = Utilities.formatDate(validDate, tz, "yyyy");
+  const monthStr = Utilities.formatDate(validDate, tz, "MM");
+  const startStr = `${yearStr}-${monthStr}-01`;
+
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  const nextYear = (month === 12) ? year + 1 : year;
+  const nextMonth = (month === 12) ? 1 : month + 1;
+  const nextMonthStr = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
+  const sep = getFormulaArgumentSeparator(ss);
+  const formula = buildMonthQueryFormula(startStr, nextMonthStr, sep);
+
+  // 1. Kiểm tra nếu tab đã tồn tại (idempotent + tự động cập nhật nếu công thức cũ dùng dấu phẩy ',')
   const existingSheet = ss.getSheetByName(tabName);
   if (existingSheet) {
+    const curFormula = existingSheet.getRange("A2").getFormula();
+    if (!curFormula || curFormula.includes(",")) {
+      try {
+        existingSheet.getRange("A2").setFormulaLocal(formula);
+      } catch (_) {
+        existingSheet.getRange("A2").setFormula(formula);
+      }
+      Logger.log(`[ensureMonthSheet] Đã cập nhật công thức A2 với dấu phân cách '${sep}' cho tab ${tabName}`);
+    }
     return existingSheet;
   }
 
@@ -131,25 +179,18 @@ function ensureMonthSheet(date) {
     }
   }
 
-  // 6. Tính ngày đầu tháng và ngày đầu tháng tiếp theo theo múi giờ Spreadsheet
-  const yearStr = Utilities.formatDate(validDate, tz, "yyyy");
-  const monthStr = Utilities.formatDate(validDate, tz, "MM");
-  const startStr = `${yearStr}-${monthStr}-01`;
+  // 6. Ghi duy nhất 1 công thức QUERY tại A2 (dùng setFormulaLocal theo locale vi_VN)
+  try {
+    newSheet.getRange("A2").setFormulaLocal(formula);
+  } catch (formulaErr) {
+    Logger.log("[ensureMonthSheet] setFormulaLocal lỗi, fallback về setFormula: " + formulaErr);
+    newSheet.getRange("A2").setFormula(formula);
+  }
 
-  const year = parseInt(yearStr, 10);
-  const month = parseInt(monthStr, 10);
-  const nextYear = (month === 12) ? year + 1 : year;
-  const nextMonth = (month === 12) ? 1 : month + 1;
-  const nextMonthStr = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
-
-  // 7. Ghi duy nhất 1 công thức QUERY tại A2 (sử dụng literal dates được tạo sẵn trong JS)
-  const formula = buildMonthQueryFormula(startStr, nextMonthStr);
-  newSheet.getRange("A2").setFormula(formula);
-
-  // 8. Đặt ghi chú cảnh báo tại A2
+  // 7. Đặt ghi chú cảnh báo tại A2
   newSheet.getRange("A2").setNote("View only — edit in the master sheet");
 
-  // 9. Thêm bảo vệ chỉ cảnh báo (warning-only protection)
+  // 8. Thêm bảo vệ chỉ cảnh báo (warning-only protection)
   try {
     const protection = newSheet.protect().setDescription(`View only: ${tabName}`);
     protection.setWarningOnly(true);
@@ -208,6 +249,8 @@ function backfillMonthSheets() {
   for (const ym of sortedMonths) {
     if (ss.getSheetByName(ym)) {
       existing.push(ym);
+      // Gọi ensureMonthSheet để tự động sửa công thức A2 nếu tab cũ còn mang cú pháp lỗi dấu phẩy
+      ensureMonthSheet(monthSampleDates[ym]);
     } else {
       ensureMonthSheet(monthSampleDates[ym]);
       created.push(ym);
@@ -218,4 +261,3 @@ function backfillMonthSheets() {
   Logger.log(summary);
   return { created, existing, total: sortedMonths.length, tz };
 }
-
