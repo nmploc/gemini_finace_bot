@@ -125,6 +125,15 @@ function ensureMonthSheet(date) {
   // 1. Kiểm tra nếu tab đã tồn tại (idempotent + tự động cập nhật nếu công thức cũ thiếu FORMAT A hoặc dùng dấu phẩy ',')
   const existingSheet = ss.getSheetByName(tabName);
   if (existingSheet) {
+    // Đảm bảo định dạng Ngày giờ cho cột A và Số tiền cho cột D
+    try {
+      const maxRows = existingSheet.getMaxRows();
+      if (maxRows > 1) {
+        existingSheet.getRange(2, 1, maxRows - 1, 1).setNumberFormat("dd/MM/yyyy HH:mm:ss");
+        existingSheet.getRange(2, 4, maxRows - 1, 1).setNumberFormat("#,##0");
+      }
+    } catch (_) {}
+
     const curFormula = existingSheet.getRange("A2").getFormula();
     if (!curFormula || curFormula.includes(",") || !curFormula.includes("FORMAT A")) {
       try {
@@ -179,7 +188,18 @@ function ensureMonthSheet(date) {
     }
   }
 
-  // 6. Ghi duy nhất 1 công thức QUERY tại A2 (dùng setFormulaLocal theo locale vi_VN)
+  // 6. Đảm bảo cột A luôn có định dạng Ngày giờ (Date time) và cột D có định dạng số tiền
+  try {
+    const maxRows = newSheet.getMaxRows();
+    if (maxRows > 1) {
+      newSheet.getRange(2, 1, maxRows - 1, 1).setNumberFormat("dd/MM/yyyy HH:mm:ss");
+      newSheet.getRange(2, 4, maxRows - 1, 1).setNumberFormat("#,##0");
+    }
+  } catch (fmtColErr) {
+    Logger.log("[ensureMonthSheet] Bỏ qua lỗi định dạng cột A/D: " + fmtColErr);
+  }
+
+  // 7. Ghi duy nhất 1 công thức QUERY tại A2 (dùng setFormulaLocal theo locale vi_VN)
   try {
     newSheet.getRange("A2").setFormulaLocal(formula);
   } catch (formulaErr) {
