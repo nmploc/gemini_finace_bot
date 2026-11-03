@@ -88,7 +88,7 @@ function reportSpreadsheetTimeZone() {
  * @returns {string} Chuỗi công thức hoàn chỉnh để setFormulaLocal() / setFormula()
  */
 function buildMonthQueryFormula(startStr, nextMonthStr, sep = ";") {
-  return `=QUERY('${MASTER_SHEET_NAME}'!A2:F${sep} "SELECT * WHERE A >= date '${startStr}' AND A < date '${nextMonthStr}'"${sep} 0)`;
+  return `=QUERY('${MASTER_SHEET_NAME}'!A2:F${sep} "SELECT * WHERE A >= date '${startStr}' AND A < date '${nextMonthStr}' FORMAT A 'dd/MM/yyyy HH:mm:ss'"${sep} 0)`;
 }
 
 /**
@@ -122,17 +122,17 @@ function ensureMonthSheet(date) {
   const sep = getFormulaArgumentSeparator(ss);
   const formula = buildMonthQueryFormula(startStr, nextMonthStr, sep);
 
-  // 1. Kiểm tra nếu tab đã tồn tại (idempotent + tự động cập nhật nếu công thức cũ dùng dấu phẩy ',')
+  // 1. Kiểm tra nếu tab đã tồn tại (idempotent + tự động cập nhật nếu công thức cũ thiếu FORMAT A hoặc dùng dấu phẩy ',')
   const existingSheet = ss.getSheetByName(tabName);
   if (existingSheet) {
     const curFormula = existingSheet.getRange("A2").getFormula();
-    if (!curFormula || curFormula.includes(",")) {
+    if (!curFormula || curFormula.includes(",") || !curFormula.includes("FORMAT A")) {
       try {
         existingSheet.getRange("A2").setFormulaLocal(formula);
       } catch (_) {
         existingSheet.getRange("A2").setFormula(formula);
       }
-      Logger.log(`[ensureMonthSheet] Đã cập nhật công thức A2 với dấu phân cách '${sep}' cho tab ${tabName}`);
+      Logger.log(`[ensureMonthSheet] Đã cập nhật công thức A2 với FORMAT A và dấu phân cách '${sep}' cho tab ${tabName}`);
     }
     return existingSheet;
   }
