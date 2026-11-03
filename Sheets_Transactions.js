@@ -57,15 +57,24 @@ function ensureSheet() {
 }
 
 function appendToSheet(parsed, user, whenDate) {
+  const txDate = whenDate || new Date();
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
     const ss = SpreadsheetApp.openById(SHEET_ID);
-    const sh = ss.getSheetByName("Transactions") || ss.insertSheet("Transactions");
-    sh.appendRow([whenDate || new Date(), user, parsed.type, parsed.amount, parsed.note || "", parsed.category || "Khác"]);
+    const sh = ss.getSheetByName(MASTER_SHEET_NAME) || ss.insertSheet(MASTER_SHEET_NAME);
+    sh.appendRow([txDate, user, parsed.type, parsed.amount, parsed.note || "", parsed.category || "Khác"]);
     invalidateTransactionsCache();
   } finally {
     lock.releaseLock();
+  }
+
+  // Tự động đảm bảo tab tháng tương ứng tồn tại (hỗ trợ cả giao dịch nhập lùi ngày).
+  // Đặt trong try/catch ngoài lock để không bao giờ làm gián đoạn việc lưu hay phản hồi Telegram.
+  try {
+    ensureMonthSheet(txDate);
+  } catch (sheetErr) {
+    Logger.log("[appendToSheet] Lỗi ensureMonthSheet (bỏ qua để không chặn bot): " + sheetErr);
   }
 }
 

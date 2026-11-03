@@ -15,6 +15,13 @@ const TG_API     = 'https://api.telegram.org/bot' + BOT_TOKEN;
 const REMIND_HOUR = 20;
 const REPORT_HOUR = 21;
 
+// =====================================================
+// MASTER SHEET & MONTH TABS CONFIGURATION
+// =====================================================
+const MASTER_SHEET_NAME  = "Transactions";
+const MONTH_SHEET_FORMAT = "yyyy-MM";
+const MONTH_SHEET_REGEX  = /^\d{4}-\d{2}$/;
+
 // ĐÃ HẠ CẤP: dùng bản Flash ổn định (3.5) thay vì alias "gemini-flash-latest".
 // Lý do: alias "-latest" từng tự động trỏ sang "gemini-3.7-flash" ngay lúc bản đó mới
 // ra mắt và chưa đủ capacity, khiến toàn bộ request bị Google trả về lỗi 503 ServiceUnavailable
